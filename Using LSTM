@@ -1,0 +1,102 @@
+import numpy as np
+import pandas as pd
+import statsmodels
+from statsmodels.tsa.stattools import adfuller
+import matplotlib.pyplot as plt
+from scipy.stats import shapiro
+import warnings
+import keras
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import LSTM
+from keras.layers import Dropout
+from keras.layers import *
+from keras.preprocessing.sequence import TimeseriesGenerator
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+warnings.filterwarnings("ignore")
+df = pd.read_csv("C:\\Users\\Samir Prasun\\Desktop\\production forecasting\\Avg-Well-Rates.csv")
+oil_rate=df.Oil_Prod_Rate.values
+stat, p = shapiro(df.Oil_Prod_Rate.values)
+print('Statistics=%.3f, p=%.3f' % (stat, p))
+# interpret
+alpha = 0.05
+if p > alpha:
+	print('Sample looks Gaussian (fail to reject H0)')
+else:
+	print('Sample does not look Gaussian (reject H0)')
+    
+result = adfuller(df.Oil_Prod_Rate.values)
+print('ADF Statistic: %f' % result[0])
+print('p-value: %f' % result[1])
+
+
+dataset = df.iloc[:,[1,5]].values
+
+
+
+##data = data.astype('float32')
+##
+scaler = MinMaxScaler(feature_range = (0, 1))
+
+dataset[:,0:2] = scaler.fit_transform(dataset[:,:])
+
+df.head()
+train_size = int(len(df) * 0.8)
+test_size = len(df) - train_size
+train, test = dataset[0:train_size,:], dataset[train_size:len(dataset),:]
+
+test_actual = scaler.inverse_transform(test)
+
+
+
+def create_dataset(dataset, look_back=1):
+    X, Y = [], []
+    for i in range(len(dataset)-look_back-1):
+        a = dataset[i:(i+look_back), :]
+        X.append(a)
+        Y.append(dataset[i + look_back, 0])
+    return np.array(X), np.array(Y)
+    
+look_back = 5
+X_train, Y_train = create_dataset(train, look_back)
+X_test, Y_test = create_dataset(test, look_back)
+
+# reshape input to be [samples, time steps, features]
+X_train = np.reshape(X_train, (X_train.shape[0], look_back, 2))
+X_test = np.reshape(X_test, (X_test.shape[0], look_back, 2))
+
+lstm_model = Sequential()
+lstm_model.add(LSTM(100, input_shape=(X_train.shape[1], 2)))
+lstm_model.add(Dropout(0.2))
+lstm_model.add(Dense(1))
+lstm_model.compile(loss='mean_squared_error', optimizer='adam')
+
+lstm_model.fit(X_train, Y_train, epochs=60, batch_size=30, validation_data=(X_test, Y_test))
+
+train_predict = lstm_model.predict(X_train)
+test_predict = lstm_model.predict(X_test)
+
+##test_predict_new=scaler.inverse_transform(test_predict)
+
+
+##train_predict_new = scaler.inverse_transform(train_predict)
+
+plt.figure(figsize=(10,6))
+plt.plot(train[:,0], color='blue', label='Actual')
+plt.plot(train_predict, color='red', label='Predicted data')
+plt.title('Oil Rate Training')
+plt.xlabel('Date')
+plt.ylabel('Oil_production_rate')
+plt.legend()
+plt.show()
+
+plt.figure(figsize=(10,6))
+plt.plot(test[:,0], color='blue', label='Actual')
+plt.plot(test_predict, color='red', label='Predicted data')
+plt.title('Oil Rate Testing')
+plt.xlabel('Date')
+plt.ylabel('Oil_production_rate')
+plt.legend()
+plt.show()
